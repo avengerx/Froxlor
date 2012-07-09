@@ -92,6 +92,7 @@ class bind
 		$known_filenames = array();
 
 		$bindconf_file = '# ' . $this->settings['system']['bindconf_directory'] . 'froxlor_bind.conf' . "\n" . '# Created ' . date('d.m.Y H:i') . "\n" . '# Do NOT manually edit this file, all changes will be deleted after the next domain change at the panel.' . "\n" . "\n";
+		$bindconf_slavefile = '# ' . $this->settings['system']['bindconf_directory'] . 'froxlor_bind-slave.conf' . "\n" . '# Created ' . date('d.m.Y H:i') . "\n" . '# Do NOT manually edit this file, all changes will be deleted after the next domain change at the panel.' . "\n" . "\n";
 		$result_domains = $this->db->query("SELECT `d`.`id`, `d`.`domain`, `d`.`iswildcarddomain`, `d`.`customerid`, `d`.`zonefile`, `d`.`bindserial`, `d`.`dkim`, `d`.`dkim_id`, `d`.`dkim_pubkey`, `d`.`wwwserveralias`, `ip`.`ip`, `c`.`loginname`, `c`.`guid` FROM `" . TABLE_PANEL_DOMAINS . "` `d` LEFT JOIN `" . TABLE_PANEL_CUSTOMERS . "` `c` USING(`customerid`) LEFT JOIN `" . TABLE_PANEL_IPSANDPORTS . "` AS `ip` ON(`d`.`ipandport`=`ip`.`id`) WHERE `d`.`isbinddomain` = '1' ORDER BY `d`.`domain` ASC");
 
 		while($domain = $this->db->fetch_array($result_domains))
@@ -111,29 +112,42 @@ class bind
 				fwrite($this->debugHandler, '  cron_tasks: Task4 - `' . $zonefile_name . '` zone written' . "\n");
 			}
 
-			$bindconf_file.= '# Domain ID: ' . $domain['id'] . ' - CustomerID: ' . $domain['customerid'] . ' - CustomerLogin: ' . $domain['loginname'] . "\n";
-			$bindconf_file.= 'zone "' . $domain['domain'] . '" in {' . "\n";
-			$bindconf_file.= '	type master;' . "\n";
-			$bindconf_file.= '	file "' . makeCorrectFile($this->settings['system']['bindconf_directory'] . '/' . $domain['zonefile']) . '";' . "\n";
-			$bindconf_file.= '	allow-query { any; };' . "\n";
+			$bindconf_common= '# Domain ID: ' . $domain['id'] . ' - CustomerID: ' . $domain['customerid'] . ' - CustomerLogin: ' . $domain['loginname'] . "\n";
+			$bindconf_common.= 'zone "' . $domain['domain'] . '" in {' . "\n";
+
+			// This part differs between slave and master files
+			$bindconf_file.= $bindconf_common.'	type master;' . "\n";
+			$bindconf_slavefile.= $bindconf_common.'	type slave;' . "\n";
+
+			// Restart making another common file segment
+			$bindconf_common= '	file "' . makeCorrectFile($this->settings['system']['bindconf_directory'] . '/' . $domain['zonefile']) . '";' . "\n";
+			$bindconf_common.= '	allow-query { any; };' . "\n";
 
 			if(count($this->nameservers) > 0)
 			{
-				$bindconf_file.= '	allow-transfer {' . "\n";
+				$bindconf_common.= '	allow-transfer {' . "\n";
 				for ($i = 0;$i < count($this->nameservers);$i++)
 				{
-					$bindconf_file.= '		' . $this->nameservers[$i]['ip'] . ';' . "\n";
+					$bindconf_common.= '		' . $this->nameservers[$i]['ip'] . ';' . "\n";
 				}
-
-				$bindconf_file.= '	};' . "\n";
+				$bindconf_common.= '	};' . "\n";
 			}
+			$bindconf_common.= '};' . "\n";
+			$bindconf_common.= "\n";
 
-			$bindconf_file.= '};' . "\n";
-			$bindconf_file.= "\n";
+			// Join the master and slave common segments
+			$bindconf_file.=$bindconf_common;
+			$bindconf_slavefile.=$bindconf_common;
 		}
 
+		// This lines adds correct syntax/indentation to view the file using vim
+		$bindconf_file.="\n# vim: ts=4 noet sw=4 filetype=named";
+		$bindconf_slavefile.="\n# vim: ts=4 noet sw=4 filetype=named";
 		$bindconf_file_handler = fopen(makeCorrectFile($this->settings['system']['bindconf_directory'] . '/froxlor_bind.conf'), 'w');
 		fwrite($bindconf_file_handler, $bindconf_file);
+		fclose($bindconf_file_handler);
+		$bindconf_file_handler = fopen(makeCorrectFile($this->settings['system']['bindconf_directory'] . '/froxlor_bind-slave.conf'), 'w');
+		fwrite($bindconf_file_handler, $bindconf_slavefile);
 		fclose($bindconf_file_handler);
 		fwrite($this->debugHandler, '  cron_tasks: Task4 - froxlor_bind.conf written' . "\n");
 		$this->logger->logAction(CRON_ACTION, LOG_INFO, 'froxlor_bind.conf written');
