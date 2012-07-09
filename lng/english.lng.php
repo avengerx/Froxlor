@@ -123,6 +123,15 @@ $lng['domains']['subdomain_edit'] = 'Edit (sub)domain';
 $lng['domains']['wildcarddomain'] = 'Create as wildcarddomain?';
 $lng['domains']['aliasdomain'] = 'Alias for domain';
 $lng['domains']['noaliasdomain'] = 'No alias domain';
+$lng['domains']['subdomain_adddns']="Add DNS Entry";
+$lng['domains']['dnsentry']="DNS Entry";
+$lng['domains']['dnsrectype']="DNS Record Type";
+$lng['domains']['dnsdest']="Destination";
+$lng['domains']['dnsdest_desc']="CNAME and NS expects: 'host' or 'host.domain.tld.'<br>
+	A expects: ipv4 address [xxx.yyy.zzz.kkk]<br>
+	PTR expects: kkk.zzz.yyy.xxx.in-addr.arpa.<br>
+	MX expects: [number] 'host' or [number] 'host.domain.tld.'<br>
+	More information <a href=\"http://en.wikipedia.org/wiki/List_of_DNS_record_types\">here</a>";
 
 /**
  * E-mails
@@ -236,6 +245,9 @@ $lng['error']['destinationalreadyexist'] = 'You have already defined a forwarder
 $lng['error']['destinationiswrong'] = 'The forwarder %s contains invalid character(s) or is incomplete.';
 $lng['error']['domainname'] = $lng['domains']['domainname'];
 $lng['error']['ticketnotaccessible'] = 'You cannot access this ticket.';
+$lng['error']['dnsentry'] = '<i>'.$lng['domains']['dnsentry'].'</i>';
+$lng['error']['dnsrectype'] = '<i>'.$lng['domains']['dnsrectype'].'</i>';
+$lng['error']['inadequatedestforrecord'] = 'The contents of Field <i>'.$lng['domains']['dnsdest'].'</i> does not match expected data for the chosen <i>'.$lng['domains']['dnsrectype'].'</i>.';
 
 /**
  * Questions

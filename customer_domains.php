@@ -402,6 +402,127 @@ elseif($page == 'domains')
 			}
 		}
 	}
+	elseif($action == 'add_dns_entry')
+	{
+		if($userinfo['subdomains_used'] < $userinfo['subdomains']
+		   || $userinfo['subdomains'] == '-1')
+		{
+			// List of available DNS entry types. Supported-only list.
+			$available_dns_entry_types=Array('A','CNAME','PTR','NS','MX');
+			//$available_dns_entry_types=Array('A','CNAME','PTR','AAAA','NS','MX','TXT','SRV','NAPTR'); // there are too many! :)
+			if(isset($_POST['send'])
+			   && $_POST['send'] == 'send')
+			{
+				$dns_entry = $idna_convert->encode(preg_replace(Array('/\:(\d)+$/', '/^https?\:\/\//'), '', validate($_POST['dnsentry'], 'subdomain', '', 'subdomainiswrong')));
+				$domain = $idna_convert->encode($_POST['domain']);
+				$domain_check = $db->query_first("SELECT * FROM `" . TABLE_PANEL_DOMAINS . "` WHERE `domain`='" . $db->escape($domain) . "' AND `customerid`='" . (int)$userinfo['customerid'] . "' AND `parentdomainid`='0' AND `email_only`='0' AND `caneditdomain`='1' ");
+				$completedomain = $dns_entry . '.' . $domain;
+				$completedomain_check = $db->query_first("SELECT * FROM `" . TABLE_PANEL_DOMAINS . "` WHERE `domain`='" . $db->escape($completedomain) . "' AND `customerid`='" . (int)$userinfo['customerid'] . "' AND `email_only`='0' AND `caneditdomain` = '1'");
+				$entrytype = $_POST['dnsrectype'];
+
+				$inadequate_dest_for_record=true;
+				# TODO: add tests for every suported DNS Record type.
+				
+				if($domain == '')
+				{
+					standard_error('domaincantbeempty');
+				}
+				elseif(strtolower($completedomain_check['domain']) == strtolower($completedomain))
+				{
+					// Note: for TXT records this can have a CNAME/A -and- a TXT
+					standard_error('domainexistalready', $completedomain);
+				}
+				elseif(strtolower($domain_check['domain']) != strtolower($domain))
+				{
+					standard_error('maindomainnonexist', $domain);
+				}
+				elseif($dns_entry == '')
+				{
+					standard_error(array('stringisempty', 'dnsentry'));
+				}
+				elseif($dns_entry == 'www' && $domain_check['wwwserveralias'] == '1')
+				{
+					// Note: for TXT records this can have a CNAME/A -and- a TXT
+					standard_error('wwwnotallowed');
+				}
+				elseif(!in_array($entrytype,$available_dns_entry_types)) {
+					standard_error(array('stringiswrong','dnsrectype'));
+				}
+				elseif($inadequate_dest_for_record) 
+				{
+					standard_error('inadequatedestforrecord');
+				}
+				elseif(false) # FIXME we're debugging by now :)
+				{
+					// get the phpsettingid from parentdomain, #107
+					$phpsid_result = $db->query_first("SELECT `phpsettingid` FROM `".TABLE_PANEL_DOMAINS."` WHERE `id` = '".(int)$domain_check['id']."'");
+					if(!isset($phpsid_result['phpsettingid'])
+						|| (int)$phpsid_result['phpsettingid'] <= 0
+					) {
+						// assign default config
+						$phpsid_result['phpsettingid'] = 1;
+					}
+
+					$result = $db->query("INSERT INTO `" . TABLE_PANEL_DOMAINS . "` SET 
+								`customerid` = '" . (int)$userinfo['customerid'] . "',
+								`domain` = '" . $db->escape($completedomain) . "', 
+								`documentroot` = '" . $db->escape($path) . "', 
+								`ipandport` = '" . $db->escape($domain_check['ipandport']) . "', 
+								`aliasdomain` = ".(($aliasdomain != 0) ? "'" . $db->escape($aliasdomain) . "'" : "NULL") .", 
+								`parentdomainid` = '" . (int)$domain_check['id'] . "', 
+								`isemaildomain` = '" . ($domain_check['subcanemaildomain'] == '3' ? '1' : '0') . "', 
+								`openbasedir` = '" . $db->escape($domain_check['openbasedir']) . "', 
+								`openbasedir_path` = '" . $db->escape($openbasedir_path) . "', 
+								`safemode` = '" . $db->escape($domain_check['safemode']) . "', 
+								`speciallogfile` = '" . $db->escape($domain_check['speciallogfile']) . "', 
+								`specialsettings` = '" . $db->escape($domain_check['specialsettings']) . "', 
+								`ssl_redirect` = '" . $ssl_redirect . "', 
+								`phpsettingid` = '" . $phpsid_result['phpsettingid'] . "'");
+
+					if($_doredirect)
+					{
+						$did = $db->insert_id();
+						$redirect = isset($_POST['redirectcode']) ? (int)$_POST['redirectcode'] : $settings['customredirect']['default'];
+						addRedirectToDomain($did, $redirect);
+					}
+
+					$result = $db->query("UPDATE `" . TABLE_PANEL_CUSTOMERS . "` SET `subdomains_used`=`subdomains_used`+1 WHERE `customerid`='" . (int)$userinfo['customerid'] . "'");
+					$log->logAction(USR_ACTION, LOG_INFO, "added subdomain '" . $completedomain . "'");
+					inserttask('1');
+
+					# Using nameserver, insert a task which rebuilds the server config
+					if ($settings['system']['bind_enable'])
+					{
+						inserttask('4');
+					}
+					redirectTo($filename, Array('page' => $page, 's' => $s));
+				}
+			}
+			else
+			{
+				$result = $db->query("SELECT `id`, `domain`, `documentroot`, `ssl_redirect`,`isemaildomain` FROM `" . TABLE_PANEL_DOMAINS . "` WHERE `customerid`='" . (int)$userinfo['customerid'] . "' AND `parentdomainid`='0' AND `email_only`='0' AND `caneditdomain`='1' ORDER BY `domain` ASC");
+				$domains = '';
+
+				while($row = $db->fetch_array($result))
+				{
+					$domains.= makeoption($idna_convert->decode($row['domain']), $row['domain']);
+				}
+
+				$dnsentrytypes = "";
+				foreach ($available_dns_entry_types as $entrytype) {
+					$dnsentrytypes .= makeoption($entrytype,$entrytype);
+				}
+
+				$subdomain_adddns_data = include_once dirname(__FILE__).'/lib/formfields/customer/domains/formfield.domains_adddns.php';
+				$subdomain_adddns_form = htmlform::genHTMLForm($subdomain_adddns_data);
+
+				$title = $subdomain_adddns_data['domain_adddns']['title'];
+				$image = $subdomain_adddns_data['domain_adddns']['image'];
+
+				eval("echo \"" . getTemplate("domains/domains_add_dns_entry") . "\";");
+			}
+		}
+	}
 	elseif($action == 'edit'
 	       && $id != 0)
 	{
